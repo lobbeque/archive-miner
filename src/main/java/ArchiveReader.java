@@ -5,6 +5,7 @@ package qlobbe;
  */
 
 import java.util.Map;
+import java.util.HashMap;
 
 /*
  * Scala
@@ -71,52 +72,33 @@ public class ArchiveReader {
 
         JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> metaData =  sc.newAPIHadoopFile(archivePath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
-   //      JavaPairRDD<byte[], StreamableDAFFRecordWritable> metaDataMap = metaData.mapToPair(
-		 //  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, byte[], StreamableDAFFRecordWritable>() {
-		 //    	public Tuple2<byte[], StreamableDAFFRecordWritable> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) {
-		 //     	 	return new Tuple2<byte[], StreamableDAFFRecordWritable>(c._1.copyBytes(), c._2);
-		 //   		}
-			// });
-
-		JavaPairRDD<byte[], Map<String, String>> metaDataMap = metaData.mapToPair(
-		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, byte[], StreamableDAFFRecordWritable>() {
-		    	public Tuple2<byte[], StreamableDAFFRecordWritable> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) {
-		     	 	return new Tuple2<byte[], StreamableDAFFRecordWritable>(c._1.copyBytes(), c._2);
+		JavaPairRDD<String, Map<String, String>> metaDataGrouped = metaData.mapToPair(
+		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, StreamableDAFFRecordWritable>() {
+		    	public Tuple2<String, StreamableDAFFRecordWritable> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) {
+		     	 	return new Tuple2<String, StreamableDAFFRecordWritable>(((RecordHeader)c._2.get()).id(), c._2);
 		   		}
 			})
 			.filter(c -> {
-
 				Record r =	(Record)((RecordHeader)c._2.get());
-
-				if ( r.content() instanceof MetadataContent ) {
-        			return true;
-        		} else {
-        			return false;
-        		}
-
+				return r.content() instanceof MetadataContent ? true : false;
 			}).mapValues(v -> {
+				Record r =	(Record)((RecordHeader)v.get());
+				return ((MetadataContent)r.content()).getMetadata();
+			}).combineByKey(v -> {
+				Map<String, String> x = new HashMap<String, String>();
+        		x.put("corpus", v.get("corpus"));
+        		x.put("url", v.get("url"));
+        		x.put("date", v.get("date"));
+        		return x;
+			},(x,v) -> {
+				x.put("date", x.get("date") + "|" + v.get("date"));
+				return x;
+			},(x,y) -> {
+				x.put("date", x.get("date") + "|" + y.get("date"));
+				return x;
+			});
 
-					Record r =	(Record)((RecordHeader)v.get());
-					return ((MetadataContent)r.content()).getMetadata();
-
-			});        
-
-			metaDataMap.foreach(c -> {System.out.println(c._2.toString());});
-
-   //      metaDataMap.foreach(c -> {
-
-
-
-   //      		Record r =	(Record)((RecordHeader)c._2.get());
-
-   //      		if ( r.content() instanceof MetadataContent ) {
-   //      			Map<String, String> map = ((MetadataContent)r.content()).getMetadata();
-
-   //      			System.out.println(map.toString());
-   //      		}
-
-   //      		// String dataString = DAFFUtils.dataToString(((MetadataContent)r.content()).getMetadata(), "UTF-8");
-			// });
+		// metaDataGrouped.foreach(c -> {System.out.println(c._2.toString());});		
 
 	    sc.close();
 
