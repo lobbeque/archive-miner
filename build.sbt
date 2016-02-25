@@ -13,5 +13,7 @@ autoScalaLibrary := false
 mainClass in Compile := Some("qlobbe.ArchiveReader")
 
 libraryDependencies ++= Seq(
-   "org.apache.spark" % "spark-core_2.10" % "1.6.0"
+   "org.apache.spark" % "spark-core_2.10" % "1.6.0",
+   "org.apache.solr" % "solr-core" % "5.4.1"
+
 )

@@ -23,6 +23,19 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
 
 /*
+ * Spark-Solr
+ */
+
+import com.lucidworks.spark.util.SolrSupport;
+import com.lucidworks.spark.SparkApp;
+
+/*
+ * Solr
+ */
+
+import org.apache.solr.common.SolrInputDocument;
+
+/*
  * Hadoop
  */
 
@@ -98,10 +111,23 @@ public class ArchiveReader {
 				return x;
 			});
 
+		JavaRDD<SolrInputDocument> docs = metaDataGrouped.map( c -> {
+			SolrInputDocument doc = new SolrInputDocument();
+			doc.remove("_indexed_at_tdt");
+			doc.addField("ID",c._1);
+			doc.addField("URL",c._2.get("url"));
+			doc.addField("SITE","toto.com");
+			return doc;
+		});
+
+		SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
+
+		System.out.println("wesh");
+
 		// metaDataGrouped.foreach(c -> {System.out.println(c._2.toString());});		
 
 	    sc.close();
 
-	    System.out.println("Coucou");
+	    System.out.println("Done !");
   	}
 }
