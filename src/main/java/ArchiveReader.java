@@ -4,8 +4,15 @@ package qlobbe;
  * Java
  */
 
+import java.util.Date;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.List;
 import java.util.HashMap;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.text.DateFormat;
+import java.text.ParseException;
 
 /*
  * Scala
@@ -63,11 +70,22 @@ import fr.ina.dlweb.hadoop.io.StreamableDAFFRecordWritable;
 
 public class ArchiveReader {
 
+	/*
+	 * Get the web site from the crawl session
+	 */
+	public static String getSite(String crawl_session) {
+
+		return ((String[])crawl_session.split("@"))[0];
+
+	}
+
 	public static void main(String[] args) {
 
 		ObjectMapper mapper = new ObjectMapper();
 
 		String archivePath = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/metadata-small.daff";
+
+		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
 
 		/*
 		 * Run a local spark job with 2 threads
@@ -85,46 +103,70 @@ public class ArchiveReader {
 
         JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> metaData =  sc.newAPIHadoopFile(archivePath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
-		JavaPairRDD<String, Map<String, String>> metaDataGrouped = metaData.mapToPair(
-		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, StreamableDAFFRecordWritable>() {
-		    	public Tuple2<String, StreamableDAFFRecordWritable> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) {
-		     	 	return new Tuple2<String, StreamableDAFFRecordWritable>(((RecordHeader)c._2.get()).id(), c._2);
-		   		}
-			})
-			.filter(c -> {
+		JavaPairRDD<String, Map<String, String>> metaDataGrouped = metaData.filter(c -> {
 				Record r =	(Record)((RecordHeader)c._2.get());
 				return r.content() instanceof MetadataContent ? true : false;
-			}).mapValues(v -> {
-				Record r =	(Record)((RecordHeader)v.get());
-				return ((MetadataContent)r.content()).getMetadata();
+			}).mapToPair(
+		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, Map<String, String>>() {
+		    	public Tuple2<String, Map<String, String>> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) throws IOException {
+		    		Record r = (Record)((RecordHeader)c._2.get());
+		    		Map<String, String> m = ((MetadataContent)r.content()).getMetadata();
+		     	 	return new Tuple2<String, Map<String, String>>(m.get("content"), m);
+		   		}
 			}).combineByKey(v -> {
 				Map<String, String> x = new HashMap<String, String>();
+       			x.put("active",v.get("active"));
+       			x.put("client_country", v.get("client_country"));
+        		x.put("client_ip", v.get("client_ip"));
+        		x.put("client_lang", v.get("client_lang"));
         		x.put("corpus", v.get("corpus"));
-        		x.put("url", v.get("url"));
+        		x.put("crawl_session",v.get("crawl_session"));
         		x.put("date", v.get("date"));
+        		x.put("ip", v.get("ip"));
+        		x.put("length", v.get("length"));
+        		x.put("level", v.get("level"));
+        		x.put("page", v.get("page"));
+        		x.put("referer_url", v.get("referer_url"));
+        		x.put("site",getSite(v.get("crawl_session")));
+        		x.put("type",v.get("type"));
+        		x.put("url", v.get("url"));        		
         		return x;
 			},(x,v) -> {
-				x.put("date", x.get("date") + "|" + v.get("date"));
+				x.put("crawl_session", x.get("crawl_session") + "____" + v.get("crawl_session"));
+				x.put("date", x.get("date") + "____" + v.get("date"));
 				return x;
 			},(x,y) -> {
-				x.put("date", x.get("date") + "|" + y.get("date"));
+				x.put("crawl_session", x.get("crawl_session") + "____" + y.get("crawl_session"));
+				x.put("date", x.get("date") + "____" + y.get("date"));
 				return x;
 			});
 
 		JavaRDD<SolrInputDocument> docs = metaDataGrouped.map( c -> {
 			SolrInputDocument doc = new SolrInputDocument();
-			doc.remove("_indexed_at_tdt");
-			doc.addField("ID",c._1);
-			doc.addField("URL",c._2.get("url"));
-			doc.addField("SITE","toto.com");
+			doc.addField("id",c._1);
+			doc.addField("active",((String)c._2.get("active")).equals("1") ? true : false);
+   			doc.addField("client_country", c._2.get("client_country"));
+    		doc.addField("client_ip", c._2.get("client_ip"));
+    		doc.addField("client_lang", (c._2.get("client_lang")).split(", "));
+    		doc.addField("corpus", c._2.get("corpus"));
+    		doc.addField("crawl_session",c._2.get("crawl_session").split("____"));
+    		doc.addField("date",c._2.get("date").split("____"));    		
+    		doc.addField("ip", c._2.get("ip"));
+    		doc.addField("length", Double.parseDouble(c._2.get("length")));
+    		doc.addField("level", Integer.parseInt(c._2.get("level")));
+    		doc.addField("page", Integer.parseInt(c._2.get("page")));
+    		doc.addField("referer_url", c._2.get("referer_url"));
+    		doc.addField("site",c._2.get("site"));
+    		doc.addField("type",c._2.get("type"));
+    		doc.addField("url", c._2.get("url"));        		
 			return doc;
 		});
 
 		SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
 
-		System.out.println("wesh");
-
-		// metaDataGrouped.foreach(c -> {System.out.println(c._2.toString());});		
+		// metaDataGrouped.foreach(c -> {
+		// 	System.out.println(c._2.get("date"));
+		// });		
 
 	    sc.close();
 
