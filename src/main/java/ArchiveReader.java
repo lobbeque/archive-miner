@@ -103,6 +103,8 @@ public class ArchiveReader {
 
         JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> metaData =  sc.newAPIHadoopFile(archivePath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
+		System.out.println("=====> Group ...");
+
 		JavaPairRDD<String, Map<String, String>> metaDataGrouped = metaData.filter(c -> {
 				Record r =	(Record)((RecordHeader)c._2.get());
 				return r.content() instanceof MetadataContent ? true : false;
@@ -141,6 +143,8 @@ public class ArchiveReader {
 				return x;
 			});
 
+		System.out.println("=====> SolrInputDocument");
+
 		JavaRDD<SolrInputDocument> docs = metaDataGrouped.map( c -> {
 			SolrInputDocument doc = new SolrInputDocument();
 			doc.addField("id",c._1);
@@ -161,6 +165,8 @@ public class ArchiveReader {
     		doc.addField("url", c._2.get("url"));        		
 			return doc;
 		});
+
+		System.out.println("=====> Indexation");
 
 		SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
 
