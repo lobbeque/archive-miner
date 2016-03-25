@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.text.DateFormat;
 import java.text.ParseException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /*
  * Scala
@@ -60,6 +62,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Ina
  */
 
+import fr.ina.dlweb.daff.Content;
+import fr.ina.dlweb.daff.DataContent;
 import fr.ina.dlweb.daff.MetadataContent;
 import fr.ina.dlweb.daff.DAFFUtils;
 import fr.ina.dlweb.daff.Record;
@@ -85,6 +89,8 @@ public class ArchiveReader {
 
 		String archivePath = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/metadata-small.daff";
 
+		String dataPath    = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/data-small.daff";
+
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
 
 		/*
@@ -103,9 +109,56 @@ public class ArchiveReader {
 
         JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> metaData =  sc.newAPIHadoopFile(archivePath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
-		System.out.println("=====> Group ...");
+        JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> data =  sc.newAPIHadoopFile(dataPath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
-		JavaPairRDD<String, Map<String, String>> metaDataGrouped = metaData.filter(c -> {
+		System.out.println("=====> Process Data ...");
+
+
+		data.filter(c -> {
+			Record r =	(Record)((RecordHeader)c._2.get());			
+			return r.content() instanceof DataContent ? true : false;
+		}).foreach(c -> {
+			String id = ((RecordHeader)c._2.get()).id();
+			System.out.println("==== " + id);
+			Record r =	(Record)((RecordHeader)c._2.get());
+			byte[] d = ((DataContent)r.content()).get();
+			String s = new String(d);
+			Pattern pattern = Pattern.compile("href=\"http://[^\"]*");
+    		Matcher matcher = pattern.matcher(s);
+    		// Find all matches
+		    while (matcher.find()) {
+		      // Get the matching string
+		      String match = matcher.group();
+		      System.out.println(match);
+		    }
+		});
+
+		/*
+		 * Write Data RDD like a JavaPairRDD<String, Map<String, String>> = < sha key, html content > 
+		 */
+
+		JavaPairRDD<String, Map<String, String>> dataRDD =	data.filter(c -> {
+			Record r =	(Record)((RecordHeader)c._2.get());			
+			return r.content() instanceof DataContent ? true : false; 
+		}).mapToPair(
+		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, Map<String, String>>() {
+		    	public Tuple2<String, Map<String, String>> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) throws IOException {
+		    		String id = ((RecordHeader)c._2.get()).id();
+					Record r =	(Record)((RecordHeader)c._2.get());
+					byte[] content = ((DataContent)r.content()).get();
+					Map<String, String> x = new HashMap<String, String>();
+		     	 	return new Tuple2<String, Map<String, String>>(id, x.put("content",new String(content)));
+		   		}
+			}
+		)	
+
+		System.out.println("=====> Process Meta ...");
+
+		/*
+		 * Write MetaData RDD like a JavaPairRDD<String, Map<String, String>> = < sha key, meta properties > agregated by sha key 
+		 */
+
+		JavaPairRDD<String, Map<String, String>> metaDataRDD = metaData.filter(c -> {
 				Record r =	(Record)((RecordHeader)c._2.get());
 				return r.content() instanceof MetadataContent ? true : false;
 			}).mapToPair(
@@ -142,10 +195,19 @@ public class ArchiveReader {
 				x.put("date", x.get("date") + "____" + y.get("date"));
 				return x;
 			});
+		
+		/*
+		 * Join Data & Meta
+		 */
+
+		metaDataRDD.union(dataRDD).reduceByKey((x,y) -> {
+			x.put("content",y.get("content"));
+			return x;
+		});
 
 		System.out.println("=====> SolrInputDocument");
 
-		JavaRDD<SolrInputDocument> docs = metaDataGrouped.map( c -> {
+		JavaRDD<SolrInputDocument> docs = metaDataRDD.map( c -> {
 			SolrInputDocument doc = new SolrInputDocument();
 			doc.addField("id",c._1);
 			doc.addField("active",((String)c._2.get("active")).equals("1") ? true : false);
@@ -168,9 +230,9 @@ public class ArchiveReader {
 
 		System.out.println("=====> Indexation");
 
-		SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
+		// SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
 
-		// metaDataGrouped.foreach(c -> {
+		// metaDataRDD.foreach(c -> {
 		// 	System.out.println(c._2.get("date"));
 		// });		
 
