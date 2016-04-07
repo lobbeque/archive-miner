@@ -6,6 +6,7 @@ package qlobbe;
 
 import java.util.Date;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.HashMap;
@@ -15,6 +16,9 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.stream.Stream;
 
 /*
  * Scala
@@ -88,8 +92,26 @@ public class ArchiveReader {
 		ObjectMapper mapper = new ObjectMapper();
 
 		String archivePath = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/metadata-small.daff";
-
 		String dataPath    = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/data-small.daff";
+		String sitePath    = "/home/qlobbe/data/ediaspora-corpus/ediaspora_Marocains/site.txt";
+
+    	ArrayList<String> corpus = new ArrayList<String>();		
+
+    	/*
+    	 * Parse site.txt file
+    	 */
+
+		try (Stream<String> stream = Files.lines(Paths.get(sitePath))) {
+		
+			stream.forEach(s -> {
+				corpus.add(s);
+			});
+		
+		} catch (IOException e) {
+		
+			e.printStackTrace();
+		
+		}		
 
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
 
@@ -97,7 +119,7 @@ public class ArchiveReader {
 		 * Run a local spark job with 2 threads
 		 */ 
 
-	    SparkConf conf = new SparkConf().setMaster("local[2]").setAppName("ArchiveReader");
+	    SparkConf conf = new SparkConf().setMaster("local[2]").setAppName("ArchiveReader").set("spark.driver.memory", "6g").set("spark.executor.memory","6g");
 	    
 	    JavaSparkContext sc = new JavaSparkContext(conf);
 
@@ -113,26 +135,6 @@ public class ArchiveReader {
 
 		System.out.println("=====> Process Data ...");
 
-
-		data.filter(c -> {
-			Record r =	(Record)((RecordHeader)c._2.get());			
-			return r.content() instanceof DataContent ? true : false;
-		}).foreach(c -> {
-			String id = ((RecordHeader)c._2.get()).id();
-			System.out.println("==== " + id);
-			Record r =	(Record)((RecordHeader)c._2.get());
-			byte[] d = ((DataContent)r.content()).get();
-			String s = new String(d);
-			Pattern pattern = Pattern.compile("href=\"http://[^\"]*");
-    		Matcher matcher = pattern.matcher(s);
-    		// Find all matches
-		    while (matcher.find()) {
-		      // Get the matching string
-		      String match = matcher.group();
-		      System.out.println(match);
-		    }
-		});
-
 		/*
 		 * Write Data RDD like a JavaPairRDD<String, Map<String, String>> = < sha key, html content > 
 		 */
@@ -147,10 +149,11 @@ public class ArchiveReader {
 					Record r =	(Record)((RecordHeader)c._2.get());
 					byte[] content = ((DataContent)r.content()).get();
 					Map<String, String> x = new HashMap<String, String>();
-		     	 	return new Tuple2<String, Map<String, String>>(id, x.put("content",new String(content)));
+					x.put("content",new String(content));
+		     	 	return new Tuple2<String, Map<String, String>>(id, x);
 		   		}
 			}
-		)	
+		);	
 
 		System.out.println("=====> Process Meta ...");
 
@@ -196,13 +199,73 @@ public class ArchiveReader {
 				return x;
 			});
 		
+		System.out.println("=====> Join Data & Meta ...");
+
 		/*
-		 * Join Data & Meta
+		 * Join Data & Meta using sha key
 		 */
 
-		metaDataRDD.union(dataRDD).reduceByKey((x,y) -> {
-			x.put("content",y.get("content"));
-			return x;
+		JavaPairRDD<String, Map<String, String>> joinDataRDD = metaDataRDD.join(dataRDD).mapToPair(c -> {
+			
+			Map<String, String> m = (Map<String, String>)c._2._1;
+			
+			String content = c._2._2.get("content"); 
+
+			String site = m.get("site");
+			
+			Pattern pattern = Pattern.compile("href=\"http://[^\"]*");
+    		
+    		Matcher matcher = pattern.matcher(content);
+
+    		// url from the current web site to himself
+    		ArrayList<String> link_self = new ArrayList<String>();
+    		// url from the current web site to a web site of his diasporas
+    		ArrayList<String> link_dias = new ArrayList<String>();
+    		// url from the web site to a web out of his diasporas
+    		ArrayList<String> link_unkn = new ArrayList<String>();
+
+    		ArrayList<String> link_dias_code = new ArrayList<String>();
+
+    		corpus.forEach(s -> {
+    			link_dias_code.add("0");
+    		});
+
+		    while (matcher.find()) {
+		      // Get the matching string
+		      String url = matcher.group().substring(13);
+		      String name = (String)(url.split("/")[0]).replace("www.","");
+
+		      if (url.contains(".css"))
+		      	break;
+
+		      if (name.equals(site)) {
+		      	link_self.add(url);
+		      } else if (corpus.contains(name)) {
+		      	link_dias.add(url);
+		      	int idx = corpus.indexOf(name);
+		      	link_dias_code.set(idx,"1");
+		      } else {
+		      	link_unkn.add(url);
+		      }
+		    }	
+
+		    String link = link_dias_code.stream().reduce((x,y) -> x + y).get();
+
+		    // m.put("link_self",link_self.toString());
+		    // m.put("link_dias",link_dias.toString());
+		    // m.put("link_unkn",link_unkn.toString());
+		    // m.put("content",content);		
+
+		    m.put("link",link);
+			
+			return new Tuple2<String, Map<String, String>>(c._1, m);
+		});
+
+		joinDataRDD.foreach(c -> {
+			// System.out.println("====================");
+			System.out.println(c._2.get("link"));
+			// System.out.println(c._2.get("link_dias"));
+			// System.out.println(c._2.get("link_unkn"));
 		});
 
 		System.out.println("=====> SolrInputDocument");
@@ -215,8 +278,35 @@ public class ArchiveReader {
     		doc.addField("client_ip", c._2.get("client_ip"));
     		doc.addField("client_lang", (c._2.get("client_lang")).split(", "));
     		doc.addField("corpus", c._2.get("corpus"));
-    		doc.addField("crawl_session",c._2.get("crawl_session").split("____"));
-    		doc.addField("date",c._2.get("date").split("____"));    		
+    		
+    		/*
+    		 * dates processing
+    		 */
+    		
+    		String[] dates = c._2.get("date").split("____");
+
+    		String[] crawl_session = c._2.get("crawl_session").split("____");
+
+    		String[] crawl_session_dates = Arrays.stream(crawl_session).map( cs -> { 
+    			cs = cs.split("@")[1];
+    			String d = cs.substring(0,4) + '-' + cs.substring(4,6) + '-' + cs.substring(6,11) + ':' + cs.substring(11,13) + ':' + cs.substring(13);
+    			return d; 
+    		}).toArray(size -> new String[size]);
+
+    		doc.addField("date",dates);    		
+    		doc.addField("first_modified",dates[0]);
+    		doc.addField("last_modified",dates[dates.length - 1]);
+    		
+    		doc.addField("crawl_session",crawl_session);
+    		doc.addField("first_crawl_session",crawl_session[0]);
+    		doc.addField("last_crawl_session",crawl_session[crawl_session.length - 1]);
+
+    		doc.addField("crawl_session_date",crawl_session_dates);
+    		doc.addField("first_crawl_session_date",crawl_session_dates[0]);
+			doc.addField("last_crawl_session_date",crawl_session_dates[crawl_session_dates.length - 1]);
+
+			doc.addField("link_diaspora",c._2.get("link"));
+
     		doc.addField("ip", c._2.get("ip"));
     		doc.addField("length", Double.parseDouble(c._2.get("length")));
     		doc.addField("level", Integer.parseInt(c._2.get("level")));
