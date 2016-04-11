@@ -261,16 +261,16 @@ public class ArchiveReader {
 			return new Tuple2<String, Map<String, String>>(c._1, m);
 		});
 
-		joinDataRDD.foreach(c -> {
-			// System.out.println("====================");
-			System.out.println(c._2.get("link"));
-			// System.out.println(c._2.get("link_dias"));
-			// System.out.println(c._2.get("link_unkn"));
-		});
+		// joinDataRDD.foreach(c -> {
+		// 	// System.out.println("====================");
+		// 	// System.out.println(c._2.get("link"));
+		// 	// System.out.println(c._2.get("link_dias"));
+		// 	// System.out.println(c._2.get("link_unkn"));
+		// });
 
 		System.out.println("=====> SolrInputDocument");
 
-		JavaRDD<SolrInputDocument> docs = metaDataRDD.map( c -> {
+		JavaRDD<SolrInputDocument> docs = joinDataRDD.map( c -> {
 			SolrInputDocument doc = new SolrInputDocument();
 			doc.addField("id",c._1);
 			doc.addField("active",((String)c._2.get("active")).equals("1") ? true : false);
@@ -320,7 +320,7 @@ public class ArchiveReader {
 
 		System.out.println("=====> Indexation");
 
-		// SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
+		SolrSupport.indexDocs("localhost:2181", "ediasporas_maroco", 10, docs);
 
 		// metaDataRDD.foreach(c -> {
 		// 	System.out.println(c._2.get("date"));
