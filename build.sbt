@@ -25,6 +25,7 @@ javaOptions += "-Xmx15G"
 resolvers += "Restlet Repository" at "http://maven.restlet.org"
 
 libraryDependencies ++= Seq(
+  "com.google.guava" % "guava" % "14.0",
    "org.restlet.jee" % "org.restlet.ext.servlet" % "2.3.0",
    "org.restlet.jee" % "org.restlet" % "2.3.0",
    "org.scala-lang" % "scala-reflect" % "2.10.4",

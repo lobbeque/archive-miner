@@ -18,6 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.stream.Stream;
 
 /*
@@ -37,6 +39,9 @@ import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.streaming.*;
 import org.apache.spark.streaming.api.java.*;
 import org.apache.spark.HashPartitioner;
+import org.apache.spark.broadcast.*;
+import org.apache.spark.rdd.RDD;
+
 
 /*
  * Spark-Solr
@@ -78,6 +83,13 @@ import fr.ina.dlweb.daff.RecordHeader;
 import fr.ina.dlweb.hadoop.io.StreamableDAFFInputFormat;
 import fr.ina.dlweb.hadoop.io.StreamableDAFFRecordWritable;
 
+/*
+ * Guava 
+ */
+
+import com.google.common.hash.BloomFilter;
+import com.google.common.hash.Funnels;
+import com.google.common.hash.Funnel;
 
 public class ArchiveReader {
 
@@ -90,7 +102,7 @@ public class ArchiveReader {
 
 	}
 
-	public static void archiveToSolr(String metaPath, String dataPath, ArrayList<String> corpus, DateFormat df) {
+	public static void archiveToSolr(String metaPath, String dataPath, ArrayList<String> corpus, DateFormat df, int metaSize, ArrayList<String> urls) {
 
 		/*
 		 * Run a local spark job with 2 threads
@@ -98,7 +110,7 @@ public class ArchiveReader {
 
 	    // SparkConf conf = new SparkConf().setMaster("local[20]").setAppName("ArchiveReader");
 
-	    SparkConf conf = new SparkConf().setAppName("ArchiveReader");
+	    SparkConf conf = new SparkConf().setAppName("ArchiveReader").set("mapred.max.split.size", "300000000");
 	    
 	    JavaSparkContext sc = new JavaSparkContext(conf);
 
@@ -117,8 +129,21 @@ public class ArchiveReader {
 		 */
 
 		JavaPairRDD<String, Map<String, String>> metaDataRDD = metaData.filter(c -> {
+
+				// filter first record
 				Record r =	(Record)((RecordHeader)c._2.get());
 				return r.content() instanceof MetadataContent ? true : false;
+
+			}).filter(c -> {
+		    	Record r = (Record)((RecordHeader)c._2.get());
+		    	Map<String, String> m = ((MetadataContent)r.content()).getMetadata();	
+		    	Boolean filter = false;
+		    	for ( int i = 0; i < urls.size(); i ++) {
+		    		if ( (((String[])m.get("crawl_session").split("@"))[0]).equals(urls.get(i)) ) {
+		    			filter = true;
+		    		}
+		    	}			
+				return filter;
 			}).mapToPair(
 		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, Map<String, String>>() {
 		    	public Tuple2<String, Map<String, String>> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) throws IOException {
@@ -126,7 +151,8 @@ public class ArchiveReader {
 		    		Map<String, String> m = ((MetadataContent)r.content()).getMetadata();
 		     	 	return new Tuple2<String, Map<String, String>>(m.get("content"), m);
 		   		}
-			}).partitionBy(new HashPartitioner(30)).reduceByKey((u,v) -> {
+			}).reduceByKey((u,v) -> {
+        		System.out.println("pouet");				
 				Map<String, String> x = new HashMap<String, String>();
        			x.put("active",v.get("active"));
        			x.put("client_country", v.get("client_country"));
@@ -141,21 +167,49 @@ public class ArchiveReader {
         		x.put("level", v.get("level"));
         		x.put("page", v.get("page"));
         		x.put("referer_url", v.get("referer_url"));
-        		x.put("site",getSite(v.get("crawl_session")));
-        		x.put("type",v.get("type"));
+          		x.put("type",v.get("type"));
         		x.put("url", v.get("url"));        		
         		return x;
-			},3);
+			}).partitionBy(new HashPartitioner(metaSize));
 
-        metaDataRDD.count();
+		Broadcast<List<String>> metaDataIds = sc.broadcast(metaDataRDD.keys().collect());
+
+        System.out.println(Long.toString(metaDataRDD.count()));
+
+        System.out.println("=====> Building BloomFilter");
+
+		/*
+		 * Adding Bloom Filter with default expected false positive probability of 3%.
+		 */
+
+		// BloomFilter<CharSequence> siteIds = BloomFilter.create(Funnels.stringFunnel(), ((List<String>)metaDataIds.value()).size());
+
+		// for(String id : (List<String>)metaDataIds.value()) {
+		//   siteIds.put(id);
+		// }
+
+
+
+		BloomFilter<CharSequence> siteIds = BloomFilter.create(Funnels.stringFunnel(), metaDataIds.value().size());
+
+		for(String id : (List<String>)metaDataIds.value()) {
+		  siteIds.put(id);
+		}
+
+		Broadcast<BloomFilter<CharSequence>> siteIdsBroadcast = sc.broadcast(siteIds);
+
+		/*
+		 * End Bloom Filter
+		 */
 
 		System.out.println("=====> Process Data");
 
         JavaPairRDD<BytesWritable, StreamableDAFFRecordWritable> data =  sc.newAPIHadoopFile(dataPath,StreamableDAFFInputFormat.class,BytesWritable.class,StreamableDAFFRecordWritable.class, jobConf);
 
 		JavaPairRDD<String, Map<String, String>> dataRDD =	data.filter(c -> {
-			Record r =	(Record)((RecordHeader)c._2.get());			
-			return r.content() instanceof DataContent ? true : false; 
+			Record r =	(Record)((RecordHeader)c._2.get());	
+			String id = r.id();		
+			return r.content() instanceof DataContent && siteIdsBroadcast.value().mightContain(id); 
 		}).mapToPair(
 		  	new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, Map<String, String>>() {
 		    	public Tuple2<String, Map<String, String>> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) throws IOException {
@@ -163,17 +217,18 @@ public class ArchiveReader {
 					Record r =	(Record)((RecordHeader)c._2.get());
 					byte[] content = ((DataContent)r.content()).get();
 					Map<String, String> x = new HashMap<String, String>();
-					x.put("content",new String(content));
+					//x.put("content",new String(content));
+					x.put("content","test");
 		     	 	return new Tuple2<String, Map<String, String>>(id, x);
 		   		}
 			}
-		);
+		).partitionBy(new HashPartitioner(metaSize));	
 
-		dataRDD.partitionBy(new HashPartitioner(30));
-
-		dataRDD.count();
+        System.out.println(Long.toString(dataRDD.count()));
 
 		System.out.println("=====> Join Data & Meta ...");
+
+
 
 		JavaRDD<SolrInputDocument> docs = metaDataRDD.join(dataRDD).mapToPair(c -> {
 			
@@ -181,7 +236,9 @@ public class ArchiveReader {
 			
 			String content = c._2._2.get("content"); 
 
-			String site = m.get("site");
+			String[] crawl_session = m.get("crawl_session").split("____");
+
+			String site = ((String[])((String)crawl_session[0]).split("@"))[0];
 			
 			Pattern pattern = Pattern.compile("href=\"http://[^\"]*");
     		
@@ -226,7 +283,7 @@ public class ArchiveReader {
 		    // m.put("link_unkn",link_unkn.toString());
 		    // m.put("content",content);		
 
-		    m.put("link",link);
+		    m.put("link","link");
 			
 			return new Tuple2<String, Map<String, String>>(c._1, m);
 		}).map( c -> {
@@ -264,14 +321,14 @@ public class ArchiveReader {
     		doc.addField("first_crawl_session_date",crawl_session_dates[0]);
 			doc.addField("last_crawl_session_date",crawl_session_dates[crawl_session_dates.length - 1]);
 
-			doc.addField("link_diaspora",c._2.get("link"));
+			doc.addField("link_diaspora",c._2.get("link"));			
 
     		doc.addField("ip", c._2.get("ip"));
     		doc.addField("length", Double.parseDouble(c._2.get("length")));
     		doc.addField("level", Integer.parseInt(c._2.get("level")));
     		doc.addField("page", Integer.parseInt(c._2.get("page")));
     		doc.addField("referer_url", c._2.get("referer_url"));
-    		doc.addField("site",c._2.get("site"));
+    		doc.addField("site",((String[])((String)crawl_session[0]).split("@"))[0]);
     		doc.addField("type",c._2.get("type"));
     		doc.addField("url", c._2.get("url"));        		
 			return doc;
@@ -279,7 +336,7 @@ public class ArchiveReader {
 
 		System.out.println("=====> Start Indexing ...");		
 
-		SolrSupport.indexDocs("lame11:2181", "ediasporas_maroco", 1000, docs);
+		SolrSupport.indexDocs("lame11:2181", "ediasporas_maroco", metaSize, (RDD<SolrInputDocument>)docs.rdd());
 
 	    sc.close();
 
@@ -288,14 +345,21 @@ public class ArchiveReader {
 
 	public static void main(String[] args) {
 
+		String metaPath = args[0];
+		String dataPath = args[1];
+		String sitePath = args[2];		
+		int    metaSize = Integer.parseInt(args[3]);	
+
+    	ArrayList<String> urls = new ArrayList<String>();
+
+    	for ( int i = 4; i < args.length; i++ ) {
+       		urls.add(args[i]);
+    	}
+
+    	System.out.println(urls.toString());			
+
 		ObjectMapper mapper = new ObjectMapper();
-
-		String metaPath = "/user/qlobbe/ediasporas_Marocains/metadata-r-00006.daff";
-
-		String dataPath = "/user/qlobbe/ediasporas_Marocains/data-r-00006.daff";		
-
-		String sitePath = "/infres/ir500/ic2+/qlobbe/data/ediasporas-corpus/ediasporas_Marocains/site.txt";
-
+			
     	ArrayList<String> corpus = new ArrayList<String>();		
 
     	/*
@@ -316,7 +380,7 @@ public class ArchiveReader {
 
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
 
-		archiveToSolr(metaPath, dataPath, corpus, df);
+		archiveToSolr(metaPath, dataPath, corpus, df, metaSize, urls);
 		
   	}
 }
