@@ -16,7 +16,7 @@ autoScalaLibrary := false
 
 mainClass in Compile := Some("qlobbe.ArchiveReader")
 
-scalaVersion := "2.10.5"
+scalaVersion := "2.10.4"
 
 scalacOptions ++= Seq("-feature")
 

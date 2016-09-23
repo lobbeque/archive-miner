@@ -91,6 +91,12 @@ import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
 import com.google.common.hash.Funnel;
 
+/*
+ * Rivelaine
+ */
+
+import qlobbe.Rivelaine;
+
 public class ArchiveReader {
 
 	/*
@@ -151,8 +157,7 @@ public class ArchiveReader {
 		    		Map<String, String> m = ((MetadataContent)r.content()).getMetadata();
 		     	 	return new Tuple2<String, Map<String, String>>(m.get("content"), m);
 		   		}
-			}).reduceByKey((u,v) -> {
-        		System.out.println("pouet");				
+			}).reduceByKey((u,v) -> {				
 				Map<String, String> x = new HashMap<String, String>();
        			x.put("active",v.get("active"));
        			x.put("client_country", v.get("client_country"));
@@ -182,14 +187,6 @@ public class ArchiveReader {
 		 * Adding Bloom Filter with default expected false positive probability of 3%.
 		 */
 
-		// BloomFilter<CharSequence> siteIds = BloomFilter.create(Funnels.stringFunnel(), ((List<String>)metaDataIds.value()).size());
-
-		// for(String id : (List<String>)metaDataIds.value()) {
-		//   siteIds.put(id);
-		// }
-
-
-
 		BloomFilter<CharSequence> siteIds = BloomFilter.create(Funnels.stringFunnel(), metaDataIds.value().size());
 
 		for(String id : (List<String>)metaDataIds.value()) {
@@ -217,8 +214,7 @@ public class ArchiveReader {
 					Record r =	(Record)((RecordHeader)c._2.get());
 					byte[] content = ((DataContent)r.content()).get();
 					Map<String, String> x = new HashMap<String, String>();
-					//x.put("content",new String(content));
-					x.put("content","test");
+					x.put("content",new String(content));
 		     	 	return new Tuple2<String, Map<String, String>>(id, x);
 		   		}
 			}
@@ -227,8 +223,6 @@ public class ArchiveReader {
         System.out.println(Long.toString(dataRDD.count()));
 
 		System.out.println("=====> Join Data & Meta ...");
-
-
 
 		JavaRDD<SolrInputDocument> docs = metaDataRDD.join(dataRDD).mapToPair(c -> {
 			
@@ -239,44 +233,45 @@ public class ArchiveReader {
 			String[] crawl_session = m.get("crawl_session").split("____");
 
 			String site = ((String[])((String)crawl_session[0]).split("@"))[0];
-			
-			Pattern pattern = Pattern.compile("href=\"http://[^\"]*");
-    		
-    		Matcher matcher = pattern.matcher(content);
 
-    		// url from the current web site to himself
-    		ArrayList<String> link_self = new ArrayList<String>();
-    		// url from the current web site to a web site of his diasporas
-    		ArrayList<String> link_dias = new ArrayList<String>();
-    		// url from the web site to a web out of his diasporas
-    		ArrayList<String> link_unkn = new ArrayList<String>();
+			Map<String, List<String>> links = Rivelaine.getLinkJava(content,site,"file");
 
-    		ArrayList<String> link_dias_code = new ArrayList<String>();
+			ArrayList<String> link_in_path    = new ArrayList<String>(links.get("in_path"));
+			ArrayList<String> link_in_url     = new ArrayList<String>(links.get("in_url"));
+			ArrayList<String> link_out_social = new ArrayList<String>(links.get("out_social"));
+			ArrayList<String> link_out_url    = new ArrayList<String>(links.get("out_url"));
 
-    		corpus.forEach(s -> {
-    			link_dias_code.add("0");
-    		});
+			link_out_url.forEach(s -> {
+				System.out.println(Rivelaine.getDomainName(s));
+			});
 
-		    while (matcher.find()) {
-		      // Get the matching string
-		      String url = matcher.group().substring(13);
-		      String name = (String)(url.split("/")[0]).replace("www.","");
 
-		      if (url.contains(".css"))
-		      	break;
+    		// ArrayList<String> link_dias_code = new ArrayList<String>();
 
-		      if (name.equals(site)) {
-		      	link_self.add(url);
-		      } else if (corpus.contains(name)) {
-		      	link_dias.add(url);
-		      	int idx = corpus.indexOf(name);
-		      	link_dias_code.set(idx,"1");
-		      } else {
-		      	link_unkn.add(url);
-		      }
-		    }	
+    		// corpus.forEach(s -> {
+    		// 	link_dias_code.add("0");
+    		// });
 
-		    String link = link_dias_code.stream().reduce((x,y) -> x + y).get();
+		    // while (matcher.find()) {
+		    //   // Get the matching string
+		    //   String url = matcher.group().substring(13);
+		    //   String name = (String)(url.split("/")[0]).replace("www.","");
+
+		    //   if (url.contains(".css"))
+		    //   	break;
+
+		    //   if (name.equals(site)) {
+		    //   	link_self.add(url);
+		    //   } else if (corpus.contains(name)) {
+		    //   	link_dias.add(url);
+		    //   	int idx = corpus.indexOf(name);
+		    //   	link_dias_code.set(idx,"1");
+		    //   } else {
+		    //   	link_unkn.add(url);
+		    //   }
+		    // }	
+
+		    // String link = link_dias_code.stream().reduce((x,y) -> x + y).get();
 
 		    // m.put("link_self",link_self.toString());
 		    // m.put("link_dias",link_dias.toString());
@@ -334,9 +329,11 @@ public class ArchiveReader {
 			return doc;
 		});		
 
-		System.out.println("=====> Start Indexing ...");		
+		System.out.println("=====> Start Indexing ...");	
 
-		SolrSupport.indexDocs("lame11:2181", "ediasporas_maroco", metaSize, (RDD<SolrInputDocument>)docs.rdd());
+		System.out.println(Long.toString(docs.count()));	
+
+		// SolrSupport.indexDocs("lame11:2181", "ediasporas_maroco", metaSize, (RDD<SolrInputDocument>)docs.rdd());
 
 	    sc.close();
 
