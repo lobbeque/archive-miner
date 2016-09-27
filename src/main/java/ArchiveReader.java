@@ -36,8 +36,6 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
-import org.apache.spark.streaming.*;
-import org.apache.spark.streaming.api.java.*;
 import org.apache.spark.HashPartitioner;
 import org.apache.spark.broadcast.*;
 import org.apache.spark.rdd.RDD;
@@ -235,6 +233,8 @@ public class ArchiveReader {
 			String site = ((String[])((String)crawl_session[0]).split("@"))[0];
 
 			Map<String, List<String>> links = Rivelaine.getLinkJava(content,site,"file");
+
+			System.out.println("===== " + links.toString());
 
 			ArrayList<String> link_in_path    = new ArrayList<String>(links.get("in_path"));
 			ArrayList<String> link_in_url     = new ArrayList<String>(links.get("in_url"));
