@@ -356,7 +356,7 @@ public class ArchiveReader {
 								}).collect(Collectors.toList())));
 
 				// Get all authors of the seq
-				tmp.put("auhtor", (List<String>)(seq.stream().filter(ele -> (String)ele.get("type") == "author").map(ele -> {
+				tmp.put("author", (List<String>)(seq.stream().filter(ele -> (String)ele.get("type") == "author").map(ele -> {
 									return Rivelaine.normalizeAuthor((String)ele.get("content"));
 								}).collect(Collectors.toList()))); 
 
