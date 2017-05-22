@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.text.DateFormat;
@@ -23,7 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.stream.Stream;
 import java.security.MessageDigest;
 import java.util.stream.Collectors;
-
+import java.util.Locale;
 
 /*
  * Scala
@@ -142,7 +143,7 @@ public class ArchiveReader {
     		
 	}
 
-	public static void archiveToSolr(String metaPath, String dataPath, ArrayList<String> corpus, DateFormat df, int metaSize, ArrayList<String> urls) throws Exception{
+	public static void archiveToSolr(String metaPath, String dataPath, ArrayList<String> corpus, int metaSize, List<String> urls, String dateFrom, String dateTo) throws Exception{
 
 		/*
 		 * Run a local spark job with 2 threads
@@ -173,11 +174,9 @@ public class ArchiveReader {
 		 */
 
 		JavaPairRDD<String, Map<String, Object>> metaDataRDD = metaData.filter(c -> {
-
 				// filter first record
 				Record r =	(Record)((RecordHeader)c._2.get());
 				return r.content() instanceof MetadataContent ? true : false;
-
 			}).filter(c -> {
 		    	Record r = (Record)((RecordHeader)c._2.get());
 		    	Map<String, Object> m = (Map)((MetadataContent)r.content()).getMetadata();	
@@ -217,7 +216,37 @@ public class ArchiveReader {
           		x.put("type",v.get("type"));
         		x.put("url", v.get("url"));        		
         		return x;
+			}).filter(c -> {
+				String date = (String)c._2.get("date");	
+ 				SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+    			Date archiveDate = df.parse((date.split("____")[0]).split("T")[0]);
+				return (archiveDate.after(df.parse(dateFrom)) || archiveDate.equals(df.parse(dateFrom))) && archiveDate.before(df.parse(dateTo));
+			// }).filter(c -> {
+			// 	/*
+			// 	 * Base d'events
+			// 	 */
+			// 	String url = (String)c._2.get("url");
+			// 	return "article" == Rivelaine.getSiteSpace(url);
+			// });
 			}).partitionBy(new HashPartitioner(metaSize));
+			
+
+		System.out.println(dateFrom + " --> " + dateTo);		
+
+  //       System.out.println("=====> Write a csv");
+
+		// metaDataRDD.mapToPair(c -> {		
+
+		// 	String date = ((((String)c._2.get("date")).split("____"))[0]).split("T")[0];
+		// 	return new Tuple2<String, Integer>(date, 1);
+
+		// }).reduceByKey((u,v) -> {
+		// 	return u + v;
+		// }).map(c -> {
+		// 	return c._1 + "," + Integer.toString(c._2);
+		// }).saveAsTextFile("file:///cal/homes/qlobbe/tmp/toto.csv");
+
+	 //    sc.close();
 
 		Broadcast<List<String>> metaDataIds = sc.broadcast(metaDataRDD.keys().collect());
 
@@ -318,18 +347,8 @@ public class ArchiveReader {
 			// info grabbed from the page content
 
 			x.put("page_title", (String)content.get("content_title"));	
-			x.put("page_author", Rivelaine.normalizeAuthor((String)content.get("content_author")));
 
 			List<List<Map<String,Object>>> page_content = (List<List<Map<String,Object>>>)content.get("content");
-
-		    if ((String)content.get("content_date") != "") {
-		    	Date page_date = Rivelaine.normalizeDate((String)content.get("content_date"));
-		    	if (page_date != null) {
-		    		x.put("page_date", page_date);
-		    	} else {
-		    		// System.out.println((String)content.get("content_date"));
-		    	}
-		    }
 
 			List<HashMap<String,Object>> listOfSeq = (List<HashMap<String,Object>>)(page_content.stream().map(seq -> {
 
@@ -356,7 +375,7 @@ public class ArchiveReader {
 								}).collect(Collectors.toList())));
 
 				// Get all authors of the seq
-				tmp.put("auhtor", (List<String>)(seq.stream().filter(ele -> (String)ele.get("type") == "author").map(ele -> {
+				tmp.put("author", (List<String>)(seq.stream().filter(ele -> (String)ele.get("type") == "author").map(ele -> {
 									return Rivelaine.normalizeAuthor((String)ele.get("content"));
 								}).collect(Collectors.toList()))); 
 
@@ -370,11 +389,47 @@ public class ArchiveReader {
 				return tmp;
 			}).collect(Collectors.toList()));
 
-			x.put("page_content",listOfSeq);
-
+			x.put("page_content",listOfSeq);		
 
 		    return x;		
 		});	
+
+		/*
+		 * Base d'events
+		 */
+
+		// metaDataRDD.join(dataRDD).map(c -> {
+		// 	HashMap<String, Object> tmp = new HashMap<String, Object>(); 
+		// 	String title = (String) c._2._2.get("page_title");
+		// 	List<Date> fragDate = ((List<Map<String,Object>>)c._2._2.get("page_content")).stream()
+		// 		.filter(frag -> (Date)frag.get("date") != null)
+		// 		.map(frag -> (Date)frag.get("date")).collect(Collectors.toList());
+
+		// 	final Date minFragDate;
+		// 	if(fragDate.isEmpty()) {
+		// 	   minFragDate = null;
+		// 	} else {
+		// 	   minFragDate = fragDate.stream().min((d1,d2) -> ((Date)d1).compareTo((Date)d2)).get();
+		// 	}
+		// 	String id = "";
+		// 	try {
+  //   			id = getShaKey(title);
+  //   		} catch(Exception e) {
+  //   			id = "";
+  //   		}
+  //   		tmp.put("id", id);
+  //   		tmp.put("title", title);
+  //   		tmp.put("date", minFragDate);
+
+  //   		return tmp;
+		// }).filter(c -> {
+		// 	return c.get("id") != "" && c.get("title") != null && c.get("date") != null;
+		// }).map(c -> {
+		// 	return (String)c.get("id") + ";" + (String)c.get("title") + ";" + ((Date)c.get("date")).toString();
+		// }).saveAsTextFile("file:///cal/homes/qlobbe/tmp/news");
+
+	 //    sc.close();
+
 
         System.out.println(Long.toString(dataRDD.count()));
 
@@ -463,13 +518,24 @@ public class ArchiveReader {
 			doc.addField("page_meta_date", c._2._2.get("page_meta_date"));
 
 			doc.addField("page_title", c._2._2.get("page_title"));
-			doc.addField("page_title_shingle", c._2._2.get("page_title"));
-			doc.addField("page_author", c._2._2.get("page_author"));
-			doc.addField("page_date", c._2._2.get("page_date"));
 
 			/*
 			 * add extracted element fields 
 			 */
+
+			List<String> page_author = new ArrayList<String>();
+			List<String> page_text   = new ArrayList<String>(); 
+
+			List<Date> fragDate = ((List<Map<String,Object>>)c._2._2.get("page_content")).stream()
+				.filter(frag -> (Date)frag.get("date") != null)
+				.map(frag -> (Date)frag.get("date")).collect(Collectors.toList());
+
+			final Date minFragDate;
+			if(fragDate.isEmpty()) {
+			   minFragDate = null;
+			} else {
+			   minFragDate = fragDate.stream().min((d1,d2) -> ((Date)d1).compareTo((Date)d2)).get();
+			}
 
 			if(c._2._2.get("page_content") != null) {
 				((List<Map<String,Object>>)c._2._2.get("page_content")).forEach(seq -> {
@@ -480,37 +546,66 @@ public class ArchiveReader {
 
 					sequence.addField("id",c._1 + "_" +((List<Integer>)seq.get("offset")).stream().map(o -> Integer.toString(o)).reduce("", String::concat));
 					
-					sequence.addField("seq_type"    , (List<String>)seq.get("type"));
-					sequence.addField("seq_mask"    , (String)seq.get("mask"));
-					sequence.addField("seq_markup"  , (List<String>)seq.get("markup"));
-					sequence.addField("seq_depth"   , (List<Integer>)seq.get("depth"));
-					sequence.addField("seq_offset"  , (List<Integer>)seq.get("offset"));
-					sequence.addField("seq_author"  , (List<String>)seq.get("author"));
-					sequence.addField("seq_content" , (List<String>)seq.get("content"));
-					sequence.addField("seq_text"    , (List<String>)seq.get("text"));
+					sequence.addField("seq_type"    ,(List<String>)seq.get("type"));
+					sequence.addField("seq_mask"    ,(String)seq.get("mask"));
+					sequence.addField("seq_markup"  ,(List<String>)seq.get("markup"));
+					sequence.addField("seq_depth"   ,(List<Integer>)seq.get("depth"));
+					sequence.addField("seq_offset"  ,(List<Integer>)seq.get("offset"));
+					sequence.addField("seq_author"  ,(List<String>)seq.get("author"));
+					sequence.addField("seq_content" ,(List<String>)seq.get("content"));
+					sequence.addField("seq_text"    ,(List<String>)seq.get("text"));
+					
+					page_author.addAll((List<String>)seq.get("author"));					
+					page_text.addAll((List<String>)seq.get("text"));
+				
+					sequence.addField("seq_site"    ,doc.getField("page_site"));
+					sequence.addField("seq_url"     ,doc.getField("page_url"));
+					sequence.addField("seq_title"   ,doc.getField("page_title"));
+					sequence.addField("seq_url_id"  ,doc.getField("page_url_id"));
+					sequence.addField("seq_page_id" ,doc.getField("id"));
+					sequence.addField("seq_space"   ,doc.getField("page_space"));		
 
 					// Select the most accurate date 
 
 					Date seq_date;
+					String seq_date_accuracy = "";
 
 					if (seq.get("date") != null) {
-						seq_date = (Date)seq.get("date");
-					} else if (c._2._2.get("page_date") != null) {
-						seq_date = (Date)c._2._2.get("page_date");
-					} else if (c._2._2.get("page_meta_date") != null) {
-						seq_date = (Date)c._2._2.get("page_meta_date");
+						
+						// fragment level
+
+						sequence.addField("seq_date", (Date)seq.get("date"));
+						sequence.addField("seq_date_accuracy", "fragment");
+
+					} else if (minFragDate != null) {
+
+						// page level
+
+						sequence.addField("seq_date", (Date)minFragDate);
+						sequence.addField("seq_date_accuracy", "page");
+					
+					// } else if (c._2._2.get("page_meta_date") != null) {
+					
+					// 	// page published level
+
+					// 	sequence.addField("seq_date", (Date)c._2._2.get("page_meta_date"));
+					// 	sequence.addField("seq_date_accuracy", "published");						
+					
 					} else {
-						seq_date = Rivelaine.normalizeDate(dates[0]);
+
+						// download level 
+
+						sequence.addField("seq_date", dates[0]);
+						sequence.addField("seq_date_accuracy", "archive");						
+					
 					}
 
-					sequence.addField("seq_date", seq_date);					
+					// seq_content_id = sha256(seq_content + seq_date)
 
-					// seq_id = sha256(seq_content + seq_date)
-
-					String seq_id = ((List<String>)seq.get("content")).stream().reduce("", String::concat) + seq_date.toString();
+					String seq_content_id = ((List<String>)seq.get("content")).stream().reduce("", String::concat) + sequence.getField("seq_date").toString();
 
 		    		try {
-		    			sequence.addField("seq_id"  , getShaKey(seq_id));
+		    			sequence.addField("seq_content_id"  , getShaKey(seq_content_id));
 		    		} catch(Exception e) {
 		    			System.out.println(e.toString());
 		    		}
@@ -519,7 +614,11 @@ public class ArchiveReader {
 				});
 			}
 
-			// http://lame11.enst.fr:8800/solr/ediasporas_maroco/select?q=*:*&fl=*,[child%20parentFilter=site:*]&fq=site:*
+			doc.addField("page_date_accuracy", "archive");			
+
+			doc.addField("page_author", new HashSet<String>(page_author));
+			doc.addField("page_text", page_text);
+			doc.addField("is_page", true);
 
 			// System.out.println(Boolean.toString(doc.hasChildDocuments()));
 
@@ -542,13 +641,9 @@ public class ArchiveReader {
 		String metaPath = args[0];
 		String dataPath = args[1];
 		String sitePath = args[2];		
-		int    metaSize = Integer.parseInt(args[3]);	
-
-    	ArrayList<String> urls = new ArrayList<String>();
-
-    	for ( int i = 4; i < args.length; i++ ) {
-       		urls.add(args[i]);
-    	}
+		int    metaSize = Integer.parseInt(args[3]);
+		List<String> urls      = Arrays.asList(args[4].split(" "));	
+		List<String> dateRange = Arrays.asList(args[5].split(" "));	
 
     	System.out.println(urls.toString());			
 
@@ -572,13 +667,14 @@ public class ArchiveReader {
 		
 		}		
 
-		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
-
-		try {
-			archiveToSolr(metaPath, dataPath, corpus, df, metaSize, urls);
-		} catch(Exception e) {
-			System.out.println(e.toString());
-		}
-		
+		dateRange.stream().forEach(d -> {
+			if (dateRange.indexOf(d) != dateRange.size() - 1) {
+				try {
+					archiveToSolr(metaPath, dataPath, corpus, metaSize, urls, d, dateRange.get(dateRange.indexOf(d) + 1));
+				} catch(Exception e) {
+					System.out.println(e.toString());
+				}	
+			}
+		});
   	}
 }
