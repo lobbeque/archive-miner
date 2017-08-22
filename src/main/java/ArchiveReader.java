@@ -103,8 +103,6 @@ import qlobbe.Rivelaine;
 
 public class ArchiveReader {
 
-	private String pattern_date = "(?:(?:31(\/|-|\.)(?:0?[13578]|1[02]|(?:Jan|Mar|May|Mai|Jul|Juillet|Aug|Aou|Oct|Dec)))\1|(?:(?:29|30)(\/|-|\.)(?:0?[1,3-9]|1[0-2]|(?:Jan|Mar|Apr|Avr|May|Mai|Jun|Juin|Jul|Aug|Aou|Sep|Oct|Nov|Dec))\2))(?:(?:1[6-9]|[2-9]\d)?\d{2})$|^(?:29(\/|-|\.)(?:0?2|(?:Feb))\3(?:(?:(?:1[6-9]|[2-9]\d)?(?:0[48]|[2468][048]|[13579][26])|(?:(?:16|[2468][048]|[3579][26])00))))$|^(?:0?[1-9]|1\d|2[0-8])(\/|-|\.)(?:(?:0?[1-9]|(?:Jan|Feb|Fev|Mar|Apr|Avr|May|Mai|Jun|Juin|Jul|Juillet|Aou|Aug|Sep))|(?:1[0-2]|(?:Oct|Nov|Dec)))\4(?:(?:1[6-9]|[2-9]\d)?\d{2})";
-
 	/*
 	 * Get the web site from the crawl session
 	 */
