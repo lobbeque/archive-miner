@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.text.DateFormat;
+import java.util.TimeZone;
 import java.text.ParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -101,6 +102,8 @@ import com.google.common.hash.Funnel;
 import qlobbe.Rivelaine;
 
 public class ArchiveReader {
+
+	private String pattern_date = "(?:(?:31(\/|-|\.)(?:0?[13578]|1[02]|(?:Jan|Mar|May|Mai|Jul|Juillet|Aug|Aou|Oct|Dec)))\1|(?:(?:29|30)(\/|-|\.)(?:0?[1,3-9]|1[0-2]|(?:Jan|Mar|Apr|Avr|May|Mai|Jun|Juin|Jul|Aug|Aou|Sep|Oct|Nov|Dec))\2))(?:(?:1[6-9]|[2-9]\d)?\d{2})$|^(?:29(\/|-|\.)(?:0?2|(?:Feb))\3(?:(?:(?:1[6-9]|[2-9]\d)?(?:0[48]|[2468][048]|[13579][26])|(?:(?:16|[2468][048]|[3579][26])00))))$|^(?:0?[1-9]|1\d|2[0-8])(\/|-|\.)(?:(?:0?[1-9]|(?:Jan|Feb|Fev|Mar|Apr|Avr|May|Mai|Jun|Juin|Jul|Juillet|Aou|Aug|Sep))|(?:1[0-2]|(?:Oct|Nov|Dec)))\4(?:(?:1[6-9]|[2-9]\d)?\d{2})";
 
 	/*
 	 * Get the web site from the crawl session
@@ -221,13 +224,12 @@ public class ArchiveReader {
  				SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
     			Date archiveDate = df.parse((date.split("____")[0]).split("T")[0]);
 				return (archiveDate.after(df.parse(dateFrom)) || archiveDate.equals(df.parse(dateFrom))) && archiveDate.before(df.parse(dateTo));
-			// }).filter(c -> {
-			// 	/*
-			// 	 * Base d'events
-			// 	 */
-			// 	String url = (String)c._2.get("url");
-			// 	return "article" == Rivelaine.getSiteSpace(url);
-			// });
+			}).filter(c -> {
+				/*
+				 * Base d'events
+				 */
+				String url = (String)c._2.get("url");
+				return "article" == Rivelaine.getSiteSpace(url);
 			}).partitionBy(new HashPartitioner(metaSize));
 			
 
@@ -401,6 +403,7 @@ public class ArchiveReader {
 		// metaDataRDD.join(dataRDD).map(c -> {
 		// 	HashMap<String, Object> tmp = new HashMap<String, Object>(); 
 		// 	String title = (String) c._2._2.get("page_title");
+		// 	String url   = (String) c._2._1.get("url");
 		// 	List<Date> fragDate = ((List<Map<String,Object>>)c._2._2.get("page_content")).stream()
 		// 		.filter(frag -> (Date)frag.get("date") != null)
 		// 		.map(frag -> (Date)frag.get("date")).collect(Collectors.toList());
@@ -417,15 +420,20 @@ public class ArchiveReader {
   //   		} catch(Exception e) {
   //   			id = "";
   //   		}
+
   //   		tmp.put("id", id);
   //   		tmp.put("title", title);
+  //   		tmp.put("url", url);
   //   		tmp.put("date", minFragDate);
 
   //   		return tmp;
 		// }).filter(c -> {
 		// 	return c.get("id") != "" && c.get("title") != null && c.get("date") != null;
 		// }).map(c -> {
-		// 	return (String)c.get("id") + ";" + (String)c.get("title") + ";" + ((Date)c.get("date")).toString();
+		// 	TimeZone tz = TimeZone.getTimeZone("UTC");
+		// 	DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'"); // Quoted "Z" to indicate UTC, no timezone offset
+		// 	df.setTimeZone(tz);
+		// 	return (String)c.get("id") + ";" + ((String)c.get("title")).replaceAll(";",",") + ";" + (String)c.get("url") + ";" + df.format((Date)c.get("date"));
 		// }).saveAsTextFile("file:///cal/homes/qlobbe/tmp/news");
 
 	 //    sc.close();
@@ -643,7 +651,7 @@ public class ArchiveReader {
 		String sitePath = args[2];		
 		int    metaSize = Integer.parseInt(args[3]);
 		List<String> urls      = Arrays.asList(args[4].split(" "));	
-		List<String> dateRange = Arrays.asList(args[5].split(" "));	
+		List<String> dateRange = Arrays.asList(args[5].split(" "));
 
     	System.out.println(urls.toString());			
 
