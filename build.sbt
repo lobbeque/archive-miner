@@ -30,8 +30,11 @@ libraryDependencies ++= Seq(
    "org.restlet.jee" % "org.restlet" % "2.3.0",
    "org.scala-lang" % "scala-reflect" % "2.11.8",
    "org.scala-lang" % "scala-library" % "2.11.8",
-   "org.apache.spark" % "spark-core_2.10" % "1.6.1",
-   "org.apache.solr" % "solr-core" % "5.4.1"
+   "org.apache.spark" % "spark-core_2.10" % "2.2.0",
+   "org.apache.solr" % "solr-core" % "6.6.1",
+   "com.typesafe.scala-logging" % "scala-logging_2.11" % "3.7.2",
+   "org.apache.commons" % "commons-lang3" % "3.0",
+   "com.googlecode.json-simple" % "json-simple" % "1.1"
 )
 
 mergeStrategy in assembly <<= (mergeStrategy in assembly) { (old) =>
