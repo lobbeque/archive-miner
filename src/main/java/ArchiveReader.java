@@ -665,10 +665,57 @@ public class ArchiveReader {
 
 	}	
 
+	public static Boolean isForum(String url) {
+		Boolean res = false;
+		if (url.contains("/forum"))
+			res = true;
+		if (url.contains("/forum/profil"))
+			res = false;
+		if (url.contains("/forum/list"))
+			res = false;
+		if (url.contains("/forum/login.php"))
+			res = false;
+		if (url.contains("/forum/admin"))
+			res = false;
+		if (url.contains("/forum/posting"))
+			res = false;
+		if (url.contains("/forum/mods"))
+			res = false;	
+		if (url.contains("/forum/pm"))
+			res = false;
+		if (url.contains("folder_id="))
+			res = false;	
+		if (url.contains("forum/register"))
+			res = false;	
+		if (url.contains("forum/addon"))
+			res = false;	
+		if (url.contains("forum/control"))
+			res = false;	
+		if (url.contains("forum/read"))
+			res = false;
+		if (url.contains("forum/login"))
+			res = false;		
+		if (url.contains("forum/edit"))
+			res = false;	
+		if (url.contains("forum/follow"))
+			res = false;
+		if (url.contains("-quote"))
+			res = false;	
+		if (url.contains(".html?"))
+			res = false;		
+		if (url.contains(".php"))
+			res = false;																																																					
+		return res;
+    		
+	}	
+
 	public static void metaToFile(
 					String metaPath,
 					int partitionSize,
-					String filePath
+					String filePath,
+					List<String> urlFilter,
+					String dateInf, 
+					String dateSup					
 		) throws Exception{
 
 		// Run spark job
@@ -689,72 +736,31 @@ public class ArchiveReader {
 			// Drop DAFF header
 			Record r =	(Record)((RecordHeader)c._2.get());
 			return r.content() instanceof MetadataContent ? true : false;
+		}).filter(c -> {
+			// Keep meta from a given site
+	    	Record r = (Record)((RecordHeader)c._2.get());
+	    	Map<String, Object> m = (Map)((MetadataContent)r.content()).getMetadata();
+	    	String domain = ((String[])((String)m.get("crawl_session")).split("@"))[0];
+	    	String url = (String)m.get("url");	
+	    	String level = (String)m.get("level");
+	    	return  urlFilter.contains(domain) && url.equals("http://www.ccme.org.ma/") ? true : false;			
 		}).mapToPair(
 			// Change type of PairRDD
 	  		new PairFunction<Tuple2<BytesWritable, StreamableDAFFRecordWritable>, String, Map<String, Object>>() {
 	    		public Tuple2<String, Map<String, Object>> call(Tuple2<BytesWritable, StreamableDAFFRecordWritable> c) throws IOException {
 	    			Record r = (Record)((RecordHeader)c._2.get());
 	    			Map<String, Object> m = (Map)((MetadataContent)r.content()).getMetadata();
-					String domain = getSite((String)m.get("crawl_session"));
-		    		m.put("domain",domain);
-		   //  		m.put("session",(String)m.get("crawl_session"));
-					// try {
-		   //  			String date = (String)m.get("date");	
-	 			// 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-	    // 				Date archiveDate = df.parse(date);
-		   //  			m.put("dateFrom",archiveDate);
-		   //  			m.put("dateTo",  archiveDate);
-					// } catch(Exception e) {
-					// 	System.out.println(e.toString());
-					// }
-					m.put("active",(String)m.get("active"));
-					try {
-		    			String date = (String)m.get("date");	
-	 					DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-		    			m.put("date",df.parse(date));
-					} catch(Exception e) {
-						System.out.println(e.toString());
-					}
-					System.out.println((String)m.get("active"));
-					return new Tuple2<String, Map<String, Object>>(domain, m);
+	     	 		return new Tuple2<String, Map<String, Object>>((String)m.get("content"), m);
 	   			}
 			}
 		).reduceByKey((u,v) -> {
 			// Group meta by key (ie: by archived version)				
-			Map<String, Object> x = new HashMap<String, Object>();
-    		// agregate and compare date
-    // 		Date uDateF = (Date)u.get("dateFrom");
-    // 		Date vDateF = (Date)v.get("dateFrom");
-	   //  	if (uDateF.compareTo(vDateF) > 0) {
-	   //      	x.put("dateFrom", v.get("dateFrom"));
-	   //      } else if (uDateF.compareTo(vDateF) < 0) {
-				// x.put("dateFrom", u.get("dateFrom"));	            
-	   //      } else {
-	   //          x.put("dateFrom", u.get("dateFrom"));
-	   //      }
-	   //      Date uDateT = (Date)u.get("dateTo");
-    // 		Date vDateT = (Date)v.get("dateTo");
-	   //  	if (uDateT.compareTo(vDateT) > 0) {
-	   //      	x.put("dateTo", u.get("dateTo"));
-	   //      } else if (uDateT.compareTo(vDateT) < 0) {
-				// x.put("dateTo", v.get("dateTo"));	            
-	   //      } else {
-	   //          x.put("dateTo", u.get("dateTo"));
-	   //      }
-
-			// Date uDate = (Date)u.get("date");
-   //  		Date vDate = (Date)v.get("date");
-
-    		x.put("domain", u.get("domain"));    
-    		// x.put("session", (String)u.get("session") + "|" + (String)v.get("session"));    		
-    		return x;
-		}).map(c -> {
-			TimeZone tz = TimeZone.getTimeZone("UTC");
-			DateFormat df = new SimpleDateFormat("MM/yyyy");
-			df.setTimeZone(tz);
-			// long nbSession = Arrays.asList(((String)c._2.get("session")).split("|")).stream().distinct().count();
-			// return (String)c._2.get("domain") + ";" + df.format((Date)c._2.get("dateFrom")) + ";" + df.format((Date)c._2.get("dateTo"));
-			return (String)c._2.get("domain");
+				Map<String, Object> x = new HashMap<String, Object>();
+        		x.put("date", u.get("date"));
+        		x.put("url", v.get("url"));  
+        		return x;
+		}).map(c -> {			
+			return ((String[])((String)c._2.get("date")).split("T"))[0] + ";True";
 		}).saveAsTextFile("file:///cal/homes/qlobbe/tmp/dates");
 
 		sc.close();
@@ -882,7 +888,7 @@ public class ArchiveReader {
 					} else if (type.equals("meta")) {
 						try {
 							// Go to fragmentation and archivin' dude !
-							metaToFile(metaPath, partitionSize,filePath);
+							metaToFile(metaPath, partitionSize,filePath, urlFilter, d, dates.get(dates.indexOf(d) + 1));
 						} catch(Exception e) {
 							System.out.println(e.toString());
 						}						
