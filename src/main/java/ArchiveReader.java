@@ -420,41 +420,41 @@ public class ArchiveReader {
 
 		    // Use Rivelaine.js server to extract fragments 
 
-		    // ArrayList<HashMap<String,Object>> fragments = new ArrayList<HashMap<String,Object>>();
+		    ArrayList<HashMap<String,Object>> fragments = new ArrayList<HashMap<String,Object>>();
 
-		    // JSONArray results = httpGet(rivelaineUrl,new String(v));
+		    JSONArray results =  (JSONArray)httpGet(rivelaineUrl,URLEncoder.encode(new String(v),"UTF-8"),x);
 
-		    // System.out.println(results.toString());
+		    System.out.println(results.toString());
 
-		 //    for (int i = 0; i < results.size(); i ++) {
-			// 	HashMap<String, Object> tmp = new HashMap<String, Object>();
-		 //    	JSONObject frag = (JSONObject)results.get(i);
+		    for (int i = 0; i < results.size(); i ++) {
+				HashMap<String, Object> tmp = new HashMap<String, Object>();
+		    	JSONObject frag = (JSONObject)results.get(i);
 
-			// 	tmp.put("type",   (List<String>)(jsonToList((JSONArray)frag.get("type"))));
-			// 	tmp.put("author", (List<String>)(jsonToList((JSONArray)frag.get("author"))));
-			// 	tmp.put("href",   (List<String>)(jsonToList((JSONArray)frag.get("href"))));
-			// 	tmp.put("node",   (List<String>)(jsonToList((JSONArray)frag.get("node"))));
-			// 	tmp.put("nodeId", (List<String>)(jsonToList((JSONArray)frag.get("nodeId"))));
-			// 	tmp.put("ratio",       (Integer)(frag.get("ratio")));
-			// 	tmp.put("offset",      (Integer)(frag.get("offset")));
-			// 	tmp.put("text",        (Integer)(frag.get("text")));
+				tmp.put("type",   (List<String>)(jsonToList((JSONArray)frag.get("type"))));
+				tmp.put("author", (List<String>)(jsonToList((JSONArray)frag.get("author"))));
+				tmp.put("href",   (List<String>)(jsonToList((JSONArray)frag.get("href"))));
+				tmp.put("node",   (List<String>)(jsonToList((JSONArray)frag.get("node"))));
+				tmp.put("nodeId", (List<String>)(jsonToList((JSONArray)frag.get("nodeId"))));
+				tmp.put("ratio",       (Integer)(frag.get("ratio")));
+				tmp.put("offset",      (Integer)(frag.get("offset")));
+				tmp.put("text",        (Integer)(frag.get("text")));
 
-			// 	ArrayList<Date> dateTmp = new ArrayList<Date>();
-			// 	for (Object d : (JSONArray)frag.get("date")) {
-			// 		if (d != "" && Rivelaine.isStringDate(d.toString())) {
-			// 			dateTmp.add(Rivelaine.normalizeDate(d.toString()));
-			// 		}
-			// 	}
-			// 	tmp.put("date",dateTmp);
+				ArrayList<Date> dateTmp = new ArrayList<Date>();
+				for (Object d : (JSONArray)frag.get("date")) {
+					if (d != "" && Rivelaine.isStringDate(d.toString())) {
+						dateTmp.add(Rivelaine.normalizeDate(d.toString()));
+					}
+				}
+				tmp.put("date",dateTmp);
 
-			// 	fragments.add(tmp);	    	
-		 //    }
+				fragments.add(tmp);	    	
+		    }
 
-			// x.put("fragments",fragments);
+			x.put("fragments",fragments);
 
-			// return x;	
+			return x;	
 
-			return httpGet(rivelaineUrl,URLEncoder.encode(new String(v),"UTF-8"),x);	
+			// return httpGet(rivelaineUrl,URLEncoder.encode(new String(v),"UTF-8"),x);	
 
 			// return httpGet(rivelaineUrl,Base64.getEncoder().encodeToString(v),x);
 
@@ -855,7 +855,6 @@ public class ArchiveReader {
 
 			String metaPath         = (String)conf.get("metaPath");
 			String dataPath         = (String)conf.get("dataPath");
-			String sitePath         = (String)conf.get("sitePath");
 			String solrHost         = (String)conf.get("solrHost");
 			String solrColl         = (String)conf.get("solrColl");
 			String filePath         = (String)conf.get("filePath");
@@ -863,10 +862,7 @@ public class ArchiveReader {
 			String rivelaineUrl     = (String)conf.get("rivelaineUrl");
 			int    partitionSize    = (int) (long)conf.get("partitionSize");
 			List<String> urlFilter  = jsonToList((JSONArray)conf.get("urlFilter"));
-			List<String> dates      = Arrays.asList(((String)conf.get("dates")).split(" "));
-			ArrayList<String> sites = new ArrayList<String>();	
-			if (sitePath != null)	
-				sites = fileToStringArrList(sitePath);	
+			List<String> dates      = Arrays.asList(((String)conf.get("dates")).split(" "));	
 
 			dates.stream().forEach(d -> {
 				if (dates.indexOf(d) != dates.size() - 1) {

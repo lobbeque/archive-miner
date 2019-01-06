@@ -1,0 +1,13 @@
+{
+  "metaPath"  : "/user/qlobbe/ediasporas_Marocains/metadata-r-00006.daff",
+  "dataPath"  : "/user/qlobbe/ediasporas_Marocains/data-r-00006.daff",
+  "sitePath"  : "/infres/ir500/ic2+/qlobbe/data/ediasporas-corpus/ediasporas_Marocains/site.txt",
+  "solrHost"  : "lame11:2181",
+  "solrColl"  : "fragments_maroco",
+  "eventPath" : "file:///cal/homes/qlobbe/tmp/news",
+  "type"      : "fragments",
+  "rivelaineUrl" : "http://lame10:2200/getFragment?type=dom&",
+  "partitionSize" : 5000,
+  "urlFilter" : ["yabiladi.com"],
+  "dates" : "2010-12-10 2010-12-11 2010-12-12 2010-12-13 2010-12-14 2010-12-15"
+}
