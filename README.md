@@ -60,6 +60,7 @@ touch conf.json
 
 Edit the fields as follows:
 
+```
 {
   "metaPath"  : "~/webArchives/metadata.daff",
   "dataPath"  : "~/WebArchives/data.daff",
@@ -71,8 +72,9 @@ Edit the fields as follows:
   "urlFilter" : ["site1.com"],
   "dates" : "2000-01-01 2010-01-01"
 }
+```
 
-**Important:** pay attention to `solrColl` (name of the targeted solr collection), `type` (`fragments` by default), `partitionSize` (size of the spark partitions), `urlFilter` (filter the Web archives by site name such as `["site1.com","site2.com"]`) and `dates` (filter the Web archives by date such as `from to`). You also need to have a running instance of [archive-search](https://github.com/lobbeque/archive-search) and [rivelaine](https://github.com/lobbeque/rivelaine). 
+**Important:** pay attention to `solrColl` (name of the targeted solr collection), `type` (`fragments` by default), `partitionSize` (size of the spark partitions), `urlFilter` (filter the Web archives by site name such as `["site1.com","site2.com"]`) and `dates` (filter the Web archives by date such as `"from to"`). You also need to have a running instance of [archive-search](https://github.com/lobbeque/archive-search) and [rivelaine](https://github.com/lobbeque/rivelaine). 
 
 Run spark using archive-miner:
 
